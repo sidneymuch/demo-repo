@@ -1,0 +1,121 @@
+---
+title: "Partnerships and service coalitions"
+author: ""
+date: "2022-10-12"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r global_options, R.options=knitr::opts_chunk$set(warning=FALSE, message=FALSE, echo = FALSE)}
+```
+
+```{r}
+#################### NOTE ###################
+#This script imports data from the farmfit database by running a simple SQL query.
+#Simple data cleaning & quality checks are conducted
+#An analysis to establish if there is any association between formal relationships and average annual expenses per farmer
+
+
+#Last edit: 2022-10-13
+```
+
+**SUMMARY**
+
+
+SDM operators building strategic relationships with other service providers such as financial institutions, off takers, capacity builders, research/academia, input providers etc can significantly improve the efficiency of SDMs. In this analysis, we seek to understand how such partnerships/relationships improve efficiency and lower the risk of operating SDMs. Specifically, we look at how these partnerships reduce the unit cost of service delivery to farmers (HYP_71).
+
+A comparison of the business level indicators of interest in this analysis (formal relationships e.g. financial service providers, off takers etc and average annual expenses per farmer) is done by running a regression model. 
+
+We observe that most of the strategic relationships with other service providers are likely to reduce the unit cost of service delivery, although these differences are statistically indistinguishable. Generally, most SDMs did not have partnerships and this may have contributed to the statistically insignificant results. Further investigations need to be done on specific service providers (off takers (main crop), capacity builders and public extension services) as they are likely to increase the unit cost of service delivery. 
+
+
+
+**RESULTS**
+
+```{r}
+#Importing data packages
+library(tidyverse) #for data manipulation
+library(farmfit)
+library(DescTools)#for winsorization
+library(stargazer) #for formatting regression tables
+library(knitr) #displaying tables
+```
+
+
+```{r}
+#Importing data from Farmfit DB
+usethis::edit_r_environ()
+db_connect()
+
+sdm_indicators <-  db_query("SELECT * FROM view_indicator_wide")
+```
+
+
+```{r}
+#DATA QUALITY CHECKS
+#--Subset based on  variables of interest
+partnerships <- sdm_indicators %>%
+  select(C1.01, B2.01.1, B2.01.2, B2.01.3, B2.01.4, B2.01.5, B2.01.6, B2.01.7, B2.01.8)
+partnerships$C1.01 <- abs(partnerships$C1.01) #absolute values in
+partnerships[, 2:9] <- lapply(partnerships[,2:9], factor)  ## as.factor() for multiple columns
+
+```
+
+**Summary of the dataset**
+```{r}
+summary(partnerships)
+```
+The huge difference (> 3 times IQR) between the 3rd quartile and the max value signify the presence of outliers
+
+\newpage 
+
+
+**Data Visualization**
+
+
+```{r}
+partnerships <- rename(partnerships, Financial_service_provider = B2.01.1, 
+                       Off_taker_main_crop = B2.01.2, Off_taker_other_crops = B2.01.3,
+                       Capacity_builder = B2.01.4, Public_extension_services = B2.01.5,
+                       Research_or_academia = B2.01.6, Implementer = B2.01.7,
+                       Input_provider = B2.01.8) # renaming columns
+
+#-- Boxplot (checking for distribution by group & possible outliers)
+
+partnerships_long <- partnerships %>% gather(formal_relationship, fr_presence, -c(C1.01)) #wide to long for visualization
+
+partnerships_long %>%
+  ggplot( aes(x=formal_relationship, y=C1.01, fill=fr_presence)) +
+  geom_boxplot() + coord_flip() +
+  xlab("Formal relationships") + ylab("Average annual expenses per farmer")
+
+```
+
++ Outliers tend to be present where their are no formal relationships.
+
+\newpage 
+
+**Regression results**
+
+
+```{r, results='hide'}
+
+partnerships$C1.01 <- Winsorize(partnerships$C1.01, probs = c(0.05, 0.95)) #winsorizing at 95% confidence interval
+
+#REGRESSION ANALYSIS
+
+partner_model <- lm(C1.01 ~ Financial_service_provider + Off_taker_main_crop + Off_taker_other_crops + Capacity_builder + Public_extension_services
+                    + Research_or_academia + Implementer + Input_provider, data = partnerships)
+
+
+```
+
+```{r, results='asis'}
+#FORMATTING REGRESSION TABLE
+stargazer(partner_model, title="Effect of formal relationships on average annual expenses per farmer", dep.var.labels  = "", dep.var.caption = "", add.lines = list(c(""), c(""), c("")), omit.stat = c("f"), dep.var.labels.include = TRUE, covariate.labels=c("Financial service provide", "Off taker(Main crop)", "Off taker(Other crops)", "Capacity builder", "Public extension services", "Research or academia", "Implementer", "Input provider"), header=FALSE, omit=c("Constant"))
+
+```
+
